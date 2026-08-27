@@ -63,6 +63,7 @@ jobs:
       - name: Download APK differences ZIP
         env:
           ZIP_URL: ${{ inputs.differences_zip_url }}
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -71,12 +72,36 @@ jobs:
 
           echo "Downloading APK differences ZIP..."
 
-          curl -fL \
-            --retry 5 \
-            --retry-delay 2 \
-            --connect-timeout 30 \
-            "$ZIP_URL" \
-            -o input/apk-differences.zip
+          if [[ "$ZIP_URL" =~ ^https://github\.com/[^/]+/[^/]+/actions/runs/[0-9]+/artifacts/[0-9]+/?$ ]]; then
+            echo "GitHub Actions artifact URL detected."
+
+            REPO=$(echo "$ZIP_URL" | sed -E 's#^https://github\.com/([^/]+/[^/]+)/actions/runs/[0-9]+/artifacts/[0-9]+/?$#\1#')
+            ARTIFACT_ID=$(echo "$ZIP_URL" | sed -E 's#^.*/actions/runs/[0-9]+/artifacts/([0-9]+)/?$#\1#')
+
+            API_URL="https://api.github.com/repos/${REPO}/actions/artifacts/${ARTIFACT_ID}/zip"
+
+            echo "Repository: $REPO"
+            echo "Artifact ID: $ARTIFACT_ID"
+
+            curl -fL \
+              --retry 5 \
+              --retry-delay 2 \
+              --connect-timeout 30 \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              "$API_URL" \
+              -o input/apk-differences.zip
+
+          else
+            echo "Direct ZIP URL detected."
+
+            curl -fL \
+              --retry 5 \
+              --retry-delay 2 \
+              --connect-timeout 30 \
+              "$ZIP_URL" \
+              -o input/apk-differences.zip
+          fi
 
           test -s input/apk-differences.zip
 
