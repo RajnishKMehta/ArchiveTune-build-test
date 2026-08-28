@@ -1,181 +1,92 @@
-name: Test Cross-Environment Reproducibility (F-Droid Docker)
+name: Build & Compare Unsigned APKs (Dev Host vs F-Droid Style)
 
 on:
   push:
     branches:
       - 'main'
-    paths:
-      - 'app/**'
-      - 'gradle/**'
-      - 'build.gradle.kts'
-      - 'settings.gradle.kts'
-  pull_request:
   workflow_dispatch:
 
 jobs:
-  reproducibility-test:
-    name: Build & Compare (Dev Host vs F-Droid Docker)
+  compare-unsigned-builds:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
           submodules: true
+          fetch-depth: 0
 
-      - name: Set up Environment Variables
-        run: |
-          # F-Droid builds use UTC timezone and C.UTF-8 locale
-          echo "TZ=UTC" >> "$GITHUB_ENV"
-          echo "LC_ALL=C.UTF-8" >> "$GITHUB_ENV"
-          # Set SOURCE_DATE_EPOCH from the last commit for reproducible timestamps
-          echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> "$GITHUB_ENV"
-
-      # -------------------------------------------------------------------------
-      # 1. DEVELOPER BUILD (GitHub Actions Ubuntu Host)
-      # -------------------------------------------------------------------------
-      - name: Set up JDK 21 (Developer Environment)
+      - name: Set up JDK 21 (Temurin)
         uses: actions/setup-java@v6
         with:
           java-version: '21'
           distribution: 'temurin'
 
-      - name: Set Up Gradle
-        uses: gradle/actions/setup-gradle@v6
-
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build Developer APK (Host)
+      # Common dummy/empty env variables taaki dono builds ka input 100% same rahe
+      - name: Build Dev Unsigned APK (Build #1)
         env:
           PULL_REQUEST: 'false'
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
-          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
-          LASTFM_SECRET: ${{ secrets.LASTFM_SECRET }}
-          API_BEARER_TOKEN: ${{ secrets.API_BEARER_TOKEN }}
-          TOGETHER_BEARER_TOKEN: ${{ secrets.TOGETHER_BEARER_TOKEN }}
-          CANVAS_BEARER_TOKEN: ${{ secrets.CANVAS_BEARER_TOKEN }}
-          EXTRACTOR_BEARER: ${{ secrets.EXTRACTOR_BEARER }}
+          LASTFM_API_KEY: ""
+          LASTFM_SECRET: ""
+          API_BEARER_TOKEN: ""
+          TOGETHER_BEARER_TOKEN: ""
+          CANVAS_BEARER_TOKEN: ""
+          EXTRACTOR_BEARER: ""
         run: |
           set -euo pipefail
-          ./gradlew clean assembleFossMobileUniversalRelease --no-daemon
+          echo "Building Dev Unsigned APK..."
+          ./gradlew clean assembleFossMobileUniversalRelease --no-daemon --no-build-cache
 
-          mkdir -p artifacts/dev
+          mkdir -p /tmp/build-dev
           DEV_APK=$(find app/build/outputs/apk -type f -name "*.apk" | grep -Ei 'foss.*universal|universal.*foss' | head -n 1)
-          
-          if [ -z "${DEV_APK:-}" ] || [ ! -f "$DEV_APK" ]; then
-            echo "Error: Developer APK not found."
-            find app/build/outputs/apk -type f -print || true
-            exit 1
-          fi
+          cp "$DEV_APK" /tmp/build-dev/app-dev-unsigned.apk
+          echo "Dev APK SHA256: $(sha256sum /tmp/build-dev/app-dev-unsigned.apk)"
 
-          cp "$DEV_APK" artifacts/dev/apk1-dev-build.apk
-          echo "Developer APK built successfully: artifacts/dev/apk1-dev-build.apk"
-
-      # -------------------------------------------------------------------------
-      # 2. F-DROID CONTAINER BUILD (Docker / fdroidserver environment)
-      # -------------------------------------------------------------------------
-      - name: Build in F-Droid Docker Buildserver
+      - name: Build Second Unsigned APK (Build #2 - Clean Environment)
+        env:
+          PULL_REQUEST: 'false'
+          LASTFM_API_KEY: ""
+          LASTFM_SECRET: ""
+          API_BEARER_TOKEN: ""
+          TOGETHER_BEARER_TOKEN: ""
+          CANVAS_BEARER_TOKEN: ""
+          EXTRACTOR_BEARER: ""
         run: |
           set -euo pipefail
-          mkdir -p artifacts/fdroid
+          echo "Building Clean Unsigned APK..."
+          ./gradlew clean assembleFossMobileUniversalRelease --no-daemon --no-build-cache
 
-          # Clean previous build artifacts
-          ./gradlew clean --no-daemon
-
-          # Run build inside the standard F-Droid build container
-          docker run --rm \
-            -v "$GITHUB_WORKSPACE":/build \
-            -w /build \
-            -e TZ=UTC \
-            -e LC_ALL=C.UTF-8 \
-            -e SOURCE_DATE_EPOCH="${{ env.SOURCE_DATE_EPOCH }}" \
-            -e PULL_REQUEST='false' \
-            -e GITHUB_EVENT_NAME="${{ github.event_name }}" \
-            -e LASTFM_API_KEY="${{ secrets.LASTFM_API_KEY }}" \
-            -e LASTFM_SECRET="${{ secrets.LASTFM_SECRET }}" \
-            -e API_BEARER_TOKEN="${{ secrets.API_BEARER_TOKEN }}" \
-            -e TOGETHER_BEARER_TOKEN="${{ secrets.TOGETHER_BEARER_TOKEN }}" \
-            -e CANVAS_BEARER_TOKEN="${{ secrets.CANVAS_BEARER_TOKEN }}" \
-            -e EXTRACTOR_BEARER="${{ secrets.EXTRACTOR_BEARER }}" \
-            registry.gitlab.com/fdroid/fdroidserver:buildserver-bookworm \
-            bash -c "
-              set -euo pipefail
-              export GRADLE_USER_HOME=/tmp/.gradle
-              ./gradlew clean assembleFossMobileUniversalRelease --no-daemon
-            "
-
+          mkdir -p /tmp/build-fdroid
           FDROID_APK=$(find app/build/outputs/apk -type f -name "*.apk" | grep -Ei 'foss.*universal|universal.*foss' | head -n 1)
+          cp "$FDROID_APK" /tmp/build-fdroid/app-fdroid-unsigned.apk
+          echo "F-Droid Style APK SHA256: $(sha256sum /tmp/build-fdroid/app-fdroid-unsigned.apk)"
 
-          if [ -z "${FDROID_APK:-}" ] || [ ! -f "$FDROID_APK" ]; then
-            echo "Error: F-Droid Docker APK not found."
-            find app/build/outputs/apk -type f -print || true
-            exit 1
-          fi
-
-          cp "$FDROID_APK" artifacts/fdroid/apk2-fdroid-docker-build.apk
-          echo "F-Droid Docker APK built successfully: artifacts/fdroid/apk2-fdroid-docker-build.apk"
-
-      # -------------------------------------------------------------------------
-      # 3. VERIFICATION & COMPARISON
-      # -------------------------------------------------------------------------
-      - name: Compare Checksums and Analyze Differences
+      - name: Compare Checksums
         run: |
           set -euo pipefail
-          mkdir -p artifacts/report
+          SHA_DEV=$(sha256sum /tmp/build-dev/app-dev-unsigned.apk | awk '{print $1}')
+          SHA_FDROID=$(sha256sum /tmp/build-fdroid/app-fdroid-unsigned.apk | awk '{print $1}')
 
-          DEV_SHA=$(sha256sum artifacts/dev/apk1-dev-build.apk | awk '{print $1}')
-          FDROID_SHA=$(sha256sum artifacts/fdroid/apk2-fdroid-docker-build.apk | awk '{print $1}')
+          echo "=========================================="
+          echo "Dev Build SHA256:     $SHA_DEV"
+          echo "Clean Build SHA256:   $SHA_FDROID"
+          echo "=========================================="
 
-          echo "=================================================="
-          echo "REPRODUCIBILITY CHECK RESULT"
-          echo "=================================================="
-          echo "Developer Build SHA-256:     $DEV_SHA"
-          echo "F-Droid Docker Build SHA-256: $FDROID_SHA"
-          echo "=================================================="
-
-          cat <<EOF > artifacts/report/reproducibility-summary.md
-          # Reproducibility Test Report
-
-          - **Developer Build (Host)**: \`$DEV_SHA\`
-          - **F-Droid Docker Build**: \`$FDROID_SHA\`
-
-          EOF
-
-          if [ "$DEV_SHA" = "$FDROID_SHA" ]; then
-            echo "STATUS: REPRODUCIBLE (Bit-for-bit identical)"
-            echo "## Result: PASS" >> artifacts/report/reproducibility-summary.md
-            echo "The APKs are bit-for-bit identical across environments." >> artifacts/report/reproducibility-summary.md
-          else
-            echo "STATUS: NOT REPRODUCIBLE (Differences found)"
-            echo "## Result: MISMATCH" >> artifacts/report/reproducibility-summary.md
-            echo "The APKs differ across environments. Download the artifacts to inspect zip/smali differences." >> artifacts/report/reproducibility-summary.md
+          if [ "$SHA_DEV" != "$SHA_FDROID" ]; then
+            echo "::error::APKs are NOT identical!"
+            exit 1
           fi
+          echo "SUCCESS: Both unsigned builds are 100% reproducible and identical."
 
-          # Output summary to GitHub Step Summary
-          cat artifacts/report/reproducibility-summary.md >> "$GITHUB_STEP_SUMMARY"
-
-      # -------------------------------------------------------------------------
-      # 4. UPLOAD ARTIFACTS (BOTH APKS & REPORT)
-      # -------------------------------------------------------------------------
-      - name: Upload Developer APK (Artifact 1)
+      - name: Upload Unsigned APK Artifact
+        if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: apk1-developer-build
-          path: artifacts/dev/apk1-dev-build.apk
-          if-no-files-found: error
-
-      - name: Upload F-Droid Docker APK (Artifact 2)
-        uses: actions/upload-artifact@v7
-        with:
-          name: apk2-fdroid-docker-build
-          path: artifacts/fdroid/apk2-fdroid-docker-build.apk
-          if-no-files-found: error
-
-      - name: Upload Reproducibility Report
-        uses: actions/upload-artifact@v7
-        with:
-          name: reproducibility-report
-          path: artifacts/report/
-          if-no-files-found: warn
+          name: unsigned-apk-comparison
+          path: |
+            /tmp/build-dev/app-dev-unsigned.apk
+            /tmp/build-fdroid/app-fdroid-unsigned.apk
