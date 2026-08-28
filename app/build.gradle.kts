@@ -65,8 +65,8 @@ android {
     applicationId = "moe.rukamori.archivetune"
         minSdk = 26
         targetSdk = 37
-        versionCode = 143
-        versionName = "14.3.0"
+        versionCode = 144
+        versionName = "14.3.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -191,6 +191,7 @@ android {
             }
             isMinifyEnabled = true
             isShrinkResources = true
+            applicationIdSuffix = ".fdroid"
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
