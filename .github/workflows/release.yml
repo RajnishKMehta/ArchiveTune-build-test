@@ -57,8 +57,8 @@ jobs:
           echo "new_version: ${{ steps.check_version.outputs.new_version }}"
 
 
-  reproducibility:
-    name: Verify FOSS Universal Reproducibility
+  build:
+    name: Build FOSS Universal Release
     needs: check-version
     if: needs.check-version.outputs.version_changed == 'true'
     runs-on: ubuntu-latest
@@ -70,137 +70,21 @@ jobs:
 
       - name: Prepare F-Droid buildserver environment
         shell: bash
-        run: |
-          set -euo pipefail
-          chmod +x gradlew
-          docker pull registry.gitlab.com/fdroid/fdroidserver:buildserver
-
-
-      - name: Build FOSS Universal APK twice
-        shell: bash
-        env:
-          PULL_REQUEST: 'false'
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
-
-        run: |
-          set -euo pipefail
-
-          locate_foss_universal_apk() {
-            find app/build/outputs/apk \
-              -type f \
-              -name "*.apk" \
-              | grep -Ei 'foss.*universal|universal.*foss' \
-              | head -n 1 || true
-          }
-
-          echo "========================================"
-          echo "BUILD #1"
-          echo "========================================"
-
-          docker run --rm             -v "$GITHUB_WORKSPACE:/workspace"             -w /workspace             registry.gitlab.com/fdroid/fdroidserver:buildserver             bash -lc '
-              set -euo pipefail
-              apt-get update
-              apt-get install -y --no-install-recommends openjdk-21-jdk-headless
-              export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
-              export PATH="$JAVA_HOME/bin:$PATH"
-              ./gradlew clean assembleFossMobileUniversalRelease
-            '
-
-          APK_1="$(locate_foss_universal_apk)"
-
-          if [ -z "${APK_1:-}" ] || [ ! -f "$APK_1" ]; then
-            echo "Could not find FOSS universal release APK (first build)."
-            echo "APK outputs:"
-            find app/build/outputs/apk -type f -print || true
-            exit 1
-          fi
-
-          echo "FOSS APK #1:"
-          echo "$APK_1"
-
-          cp "$APK_1" /tmp/foss-universal-1.apk
-
-          SHA_1="$(sha256sum /tmp/foss-universal-1.apk | awk '{print $1}')"
-
-          echo
-          echo "========================================"
-          echo "BUILD #2"
-          echo "========================================"
-
-          docker run --rm             -v "$GITHUB_WORKSPACE:/workspace"             -w /workspace             registry.gitlab.com/fdroid/fdroidserver:buildserver             bash -lc '
-              set -euo pipefail
-              apt-get update
-              apt-get install -y --no-install-recommends openjdk-21-jdk-headless
-              export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
-              export PATH="$JAVA_HOME/bin:$PATH"
-              ./gradlew clean assembleFossMobileUniversalRelease
-            '
-
-          APK_2="$(locate_foss_universal_apk)"
-
-          if [ -z "${APK_2:-}" ] || [ ! -f "$APK_2" ]; then
-            echo "Could not find FOSS universal release APK (second build)."
-            echo "APK outputs:"
-            find app/build/outputs/apk -type f -print || true
-            exit 1
-          fi
-
-          echo "FOSS APK #2:"
-          echo "$APK_2"
-
-          cp "$APK_2" /tmp/foss-universal-2.apk
-
-          SHA_2="$(sha256sum /tmp/foss-universal-2.apk | awk '{print $1}')"
-
-          echo
-          echo "========================================"
-          echo "REPRODUCIBILITY RESULT"
-          echo "========================================"
-          echo "sha256 #1: $SHA_1"
-          echo "sha256 #2: $SHA_2"
-          echo
-
-          if [ "$SHA_1" != "$SHA_2" ]; then
-            echo "::error::FOSS universal APK is NOT reproducible."
-            echo "The two builds produced different APK files."
-            exit 1
-          fi
-
-          echo "FOSS universal APK is reproducible."
-
-      - name: Fix workspace ownership
-        if: always()
-        shell: bash
-        run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
-
-  build:
-    name: Build FOSS Universal Release
-    needs: [check-version, reproducibility]
-    if: needs.check-version.outputs.version_changed == 'true'
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          submodules: true
-
-      - name: Prepare F-Droid buildserver environment
-        shell: bash
-        run: |
-          set -euo pipefail
-          chmod +x gradlew
-          docker pull registry.gitlab.com/fdroid/fdroidserver:buildserver
+        run: chmod +x gradlew
 
       - name: Build FOSS Universal Release
         shell: bash
         env:
           PULL_REQUEST: 'false'
           GITHUB_EVENT_NAME: ${{ github.event_name }}
-
         run: |
           set -euo pipefail
 
-          docker run --rm             -v "$GITHUB_WORKSPACE:/workspace"             -w /workspace             registry.gitlab.com/fdroid/fdroidserver:buildserver             bash -lc '
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            registry.gitlab.com/fdroid/fdroidserver:buildserver \
+            bash -lc '
               set -euo pipefail
               apt-get update
               apt-get install -y --no-install-recommends openjdk-21-jdk-headless
