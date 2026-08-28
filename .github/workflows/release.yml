@@ -68,31 +68,19 @@ jobs:
         with:
           submodules: true
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@v5
-        with:
-          java-version: '21'
-          distribution: 'temurin'
+      - name: Prepare F-Droid buildserver environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          docker pull registry.gitlab.com/fdroid/fdroidserver:buildserver
 
-      - name: Set Up Gradle
-        uses: gradle/actions/setup-gradle@v6
-        with:
-          cache-cleanup: on-success
-
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
 
       - name: Build FOSS Universal APK twice
         shell: bash
         env:
           PULL_REQUEST: 'false'
           GITHUB_EVENT_NAME: ${{ github.event_name }}
-          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
-          LASTFM_SECRET: ${{ secrets.LASTFM_SECRET }}
-          API_BEARER_TOKEN: ${{ secrets.API_BEARER_TOKEN }}
-          TOGETHER_BEARER_TOKEN: ${{ secrets.TOGETHER_BEARER_TOKEN }}
-          CANVAS_BEARER_TOKEN: ${{ secrets.CANVAS_BEARER_TOKEN }}
-          EXTRACTOR_BEARER: ${{ secrets.EXTRACTOR_BEARER }}
 
         run: |
           set -euo pipefail
@@ -109,7 +97,14 @@ jobs:
           echo "BUILD #1"
           echo "========================================"
 
-          ./gradlew clean assembleFossMobileUniversalRelease
+          docker run --rm             -v "$GITHUB_WORKSPACE:/workspace"             -w /workspace             registry.gitlab.com/fdroid/fdroidserver:buildserver             bash -lc '
+              set -euo pipefail
+              apt-get update
+              apt-get install -y --no-install-recommends openjdk-21-jdk-headless
+              export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+              export PATH="$JAVA_HOME/bin:$PATH"
+              ./gradlew clean assembleFossMobileUniversalRelease
+            '
 
           APK_1="$(locate_foss_universal_apk)"
 
@@ -132,7 +127,14 @@ jobs:
           echo "BUILD #2"
           echo "========================================"
 
-          ./gradlew clean assembleFossMobileUniversalRelease
+          docker run --rm             -v "$GITHUB_WORKSPACE:/workspace"             -w /workspace             registry.gitlab.com/fdroid/fdroidserver:buildserver             bash -lc '
+              set -euo pipefail
+              apt-get update
+              apt-get install -y --no-install-recommends openjdk-21-jdk-headless
+              export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+              export PATH="$JAVA_HOME/bin:$PATH"
+              ./gradlew clean assembleFossMobileUniversalRelease
+            '
 
           APK_2="$(locate_foss_universal_apk)"
 
@@ -166,6 +168,10 @@ jobs:
 
           echo "FOSS universal APK is reproducible."
 
+      - name: Fix workspace ownership
+        if: always()
+        shell: bash
+        run: sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
 
   build:
     name: Build FOSS Universal Release
@@ -178,36 +184,32 @@ jobs:
         with:
           submodules: true
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@v5
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-
-      - name: Set Up Gradle
-        uses: gradle/actions/setup-gradle@v6
-        with:
-          cache-cleanup: on-success
-
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+      - name: Prepare F-Droid buildserver environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          docker pull registry.gitlab.com/fdroid/fdroidserver:buildserver
 
       - name: Build FOSS Universal Release
         shell: bash
         env:
           PULL_REQUEST: 'false'
           GITHUB_EVENT_NAME: ${{ github.event_name }}
-          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
-          LASTFM_SECRET: ${{ secrets.LASTFM_SECRET }}
-          API_BEARER_TOKEN: ${{ secrets.API_BEARER_TOKEN }}
-          TOGETHER_BEARER_TOKEN: ${{ secrets.TOGETHER_BEARER_TOKEN }}
-          CANVAS_BEARER_TOKEN: ${{ secrets.CANVAS_BEARER_TOKEN }}
-          EXTRACTOR_BEARER: ${{ secrets.EXTRACTOR_BEARER }}
 
         run: |
           set -euo pipefail
 
-          ./gradlew clean assembleFossMobileUniversalRelease
+          docker run --rm             -v "$GITHUB_WORKSPACE:/workspace"             -w /workspace             registry.gitlab.com/fdroid/fdroidserver:buildserver             bash -lc '
+              set -euo pipefail
+              apt-get update
+              apt-get install -y --no-install-recommends openjdk-21-jdk-headless
+              export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+              export PATH="$JAVA_HOME/bin:$PATH"
+              ./gradlew clean assembleFossMobileUniversalRelease
+            '
+
+          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
 
       - name: Locate FOSS Universal APK
         id: apk
@@ -294,6 +296,21 @@ jobs:
           echo
           echo "SHA-256:"
           sha256sum "$APK"
+
+      - name: Verify APK signature and installability
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APK="release/app-foss-mobile-universal-release.apk"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+
+          if [ -z "${APKSIGNER:-}" ] || [ ! -x "$APKSIGNER" ]; then
+            echo "apksigner not found in Android SDK build-tools."
+            exit 1
+          fi
+
+          "$APKSIGNER" verify --verbose "$APK"
 
       - name: Upload FOSS APK
         uses: actions/upload-artifact@v7
