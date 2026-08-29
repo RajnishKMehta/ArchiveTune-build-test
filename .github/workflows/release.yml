@@ -128,14 +128,14 @@ jobs:
           echo "apk=release/app-foss-mobile-universal-release-unsigned.apk" >> "$GITHUB_OUTPUT"
 
       - name: Sign FOSS APK
-        uses: ilharp/sign-android-release@v2.0.0
+        uses: ilharp/sign-android-release@v2
         with:
           releaseDir: ${{ steps.apk.outputs.release_dir }}/
           signingKey: ${{ secrets.KEYSTORE }}
           keyAlias: ${{ secrets.KEY_ALIAS }}
           keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
-          keyPassword: ${{ secrets.KEY_PASSWORD }}
-          buildToolsVersion: 35.0.0
+          keyPassword: ${{ secrets.KEYSTORE_PASSWORD }}
+          buildToolsVersion: 37.0.0
 
       - name: Rename signed APK
         shell: bash
