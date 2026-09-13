@@ -1,9 +1,5 @@
 # Pull Request
 
-Before submitting a pull request, you must attest to the following:
-
-- [ ] This pull request complies with ArchiveTune's [NO AI / NO LLM POLICY](../blob/main/CONTRIBUTING.md#no-ai--no-llm-policy).
-
 ## Summary
 
 <!-- Describe the change in 2-5 concise sentences. Include the user-facing behavior, architectural change, or maintenance outcome. -->
@@ -138,3 +134,4 @@ Before submitting a pull request, you must attest to the following:
 ## Release Notes
 
 <!-- Write one concise user-facing sentence, or "None" for internal-only changes. -->
+
