@@ -60,13 +60,13 @@ val hasReleaseSigningConfig =
 android {
     namespace = "moe.rukamori.archivetune"
     compileSdk = 37
-    ndkVersion = "30.0.16248370" // build
+    ndkVersion = "30.0.16248370"
     defaultConfig {
     applicationId = "moe.rukamori.archivetune"
         minSdk = 26
         targetSdk = 37
-        versionCode = 142
-        versionName = "15.0.0"
+        versionCode = 150
+        versionName = "15.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
